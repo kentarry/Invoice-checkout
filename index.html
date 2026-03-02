@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>精準對帳處理中心</title>
   
+  <script>
+    window.addEventListener('error', function(event) {
+      document.body.innerHTML += '<div style="color:red; background:#fee; padding:20px; font-family:sans-serif; z-index:9999; position:relative;"><strong>系統啟動錯誤:</strong> ' + event.message + '</div>';
+    });
+  </script>
+
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
   
   <script src="https://unpkg.com/lucide-react@0.344.0/dist/umd/lucide-react.min.js"></script>
 </head>
@@ -18,51 +24,106 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    // ==========================================
-    // 環境與依賴對接 (替代原本的 import)
-    // ==========================================
     const { useState, useEffect, useMemo, useRef } = React;
-    const { 
-      FileText, Loader2, CheckCircle2, AlertCircle, Download, UploadCloud, 
-      BarChart3, Filter, FileSpreadsheet, List, FileCheck, Scale, 
-      ClipboardCheck, Trash2 
-    } = lucideReact;
 
     // ==========================================
-    // API Key 安全機制 (避免上傳 GitHub 後外洩被封鎖)
+    // 防崩潰圖示提取機制
     // ==========================================
-    let API_KEY = ""; 
-    if (!API_KEY) {
-      API_KEY = localStorage.getItem('gemini_api_key') || prompt('請輸入您的 Gemini API Key：\n(為保護安全，建議不要寫死在公開的 GitHub 中。此 Key 僅儲存於您的瀏覽器本地端)');
-      if (API_KEY) localStorage.setItem('gemini_api_key', API_KEY);
-    }
+    const getIcon = (name) => {
+      const Lucide = window.lucideReact || window.lucide;
+      if (Lucide && Lucide[name]) return Lucide[name];
+      if (name === 'CheckCircle2' && Lucide && Lucide['CircleCheck']) return Lucide['CircleCheck']; // 處理版本更名
+      return ({ size=20, className="" }) => <span className={`inline-block ${className}`} style={{ width: size, height: size, backgroundColor: '#e2e8f0', borderRadius: '50%' }} title={name}></span>;
+    };
+
+    const FileText = getIcon('FileText');
+    const Loader2 = getIcon('Loader2');
+    const CheckCircle2 = getIcon('CheckCircle2');
+    const AlertCircle = getIcon('AlertCircle');
+    const Download = getIcon('Download');
+    const UploadCloud = getIcon('UploadCloud');
+    const BarChart3 = getIcon('BarChart3');
+    const Filter = getIcon('Filter');
+    const FileSpreadsheet = getIcon('FileSpreadsheet');
+    const List = getIcon('List');
+    const FileCheck = getIcon('FileCheck');
+    const Scale = getIcon('Scale');
+    const ClipboardCheck = getIcon('ClipboardCheck');
+    const Trash2 = getIcon('Trash2');
+
     const MODEL_NAME = "gemini-2.0-flash"; 
+
+    // ==========================================
+    // API 金鑰設定元件 (取代會卡畫面的 prompt)
+    // ==========================================
+    const ApiKeySetup = ({ onSave }) => {
+      const [val, setVal] = useState('');
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+          <div className="max-w-md w-full bg-white rounded-[2rem] shadow-xl border border-slate-100 p-8 animate-in fade-in zoom-in duration-300">
+            <h2 className="text-2xl font-black text-slate-800 mb-2">需要 API Key</h2>
+            <p className="text-slate-500 mb-6 text-sm">為了確保網頁順利啟動，請填入您的 Gemini API Key。此金鑰僅會保存在您的瀏覽器中，不會有外洩風險。</p>
+            <input 
+              type="password" 
+              value={val} 
+              onChange={e => setVal(e.target.value)} 
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
+              placeholder="請輸入 AIzaSy..."
+            />
+            <button 
+              onClick={() => onSave(val)}
+              disabled={!val.trim()}
+              className="w-full bg-indigo-600 disabled:bg-slate-300 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-colors"
+            >
+              儲存並進入系統
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    // ==========================================
+    // React 錯誤邊界 (防止白畫面)
+    // ==========================================
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) { return { hasError: true, error }; }
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="min-h-screen p-10 bg-rose-50 text-rose-600 font-sans">
+              <h1 className="text-2xl font-bold mb-4">很抱歉，元件渲染失敗</h1>
+              <p className="font-mono bg-white p-4 rounded-xl border border-rose-200 shadow-sm">{this.state.error.toString()}</p>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
 
     // ==========================================
     // 原始元件代碼 (功能與介面完全原封不動)
     // ==========================================
-    const App = () => {
-      // --- 原有狀態 ---
+    const Dashboard = ({ apiKey }) => {
       const [results, setResults] = useState([]);
       const [isProcessing, setIsProcessing] = useState(false);
       const [isDragging, setIsDragging] = useState(false);
       const [progress, setProgress] = useState({ current: 0, total: 0 });
       const [filterCategory, setFilterCategory] = useState('全部');
 
-      // --- 狀態：頁籤控制與發票資料 ---
       const [activeTab, setActiveTab] = useState('parser'); 
       const [invoiceData, setInvoiceData] = useState([]);
       const [invoiceTotal, setInvoiceTotal] = useState(0);
 
-      // --- 新增狀態：驗收單編輯 ---
       const [editableOrderIds, setEditableOrderIds] = useState('');
       const [editableDetails, setEditableDetails] = useState('');
 
-      // --- 新增 Ref：自動調整高度 ---
       const orderIdsRef = useRef(null);
       const detailsRef = useRef(null);
 
-      // 自動調整 textarea 高度的 Effect
       useEffect(() => {
         if (activeTab === 'acceptance') {
           if (orderIdsRef.current) {
@@ -76,7 +137,6 @@
         }
       }, [editableOrderIds, editableDetails, activeTab]);
 
-      // 初始化 pdf.js 與 xlsx
       useEffect(() => {
         const pdfScript = document.createElement('script');
         pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -92,7 +152,6 @@
         document.head.appendChild(xlsxScript);
       }, []);
 
-      // --- 1. 影像預處理 ---
       const pdfToImages = async (file) => {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -112,7 +171,6 @@
         return images;
       };
 
-      // --- 2. 精準 OCR 與 邏輯分類 ---
       const extractInfo = async (base64Image) => {
         const projectList = [
           "滿貫大亨Web館", "網頁組", "明星3缺1", "滿貫大亨", 
@@ -161,7 +219,7 @@
           }
         };
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${API_KEY}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -173,7 +231,6 @@
         return JSON.parse(result.candidates[0].content.parts[0].text);
       };
 
-      // --- 3. 執行任務與清洗 ---
       const processFiles = async (uploadedFiles) => {
         if (uploadedFiles.length === 0) return;
         setIsProcessing(true);
@@ -244,7 +301,6 @@
         }
       };
 
-      // --- 發票 XLSX 處理邏輯 ---
       const processInvoiceFile = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -316,7 +372,6 @@
         e.target.value = null; 
       };
 
-      // --- 4. 工具函數與資料處理 ---
       const copyToClipboard = (text) => {
         try {
           const textArea = document.createElement("textarea");
@@ -451,7 +506,6 @@
         a.click();
       };
 
-      // --- 比對邏輯 ---
       const comparisonResults = useMemo(() => {
         const pdfValid = results.filter(r => r.status === 'success');
         
@@ -484,7 +538,6 @@
         return compData.sort((a, b) => a.orderId.localeCompare(b.orderId));
       }, [results, invoiceData]);
 
-      // --- 驗收單資料整理邏輯 ---
       const acceptanceData = useMemo(() => {
         const validResults = results.filter(r => r.status === 'success');
         
@@ -571,7 +624,6 @@
         setEditableDetails(acceptanceData.detailsText);
       }, [acceptanceData]);
 
-      // --- 5. UI 渲染 ---
       return (
         <div className="min-h-screen bg-slate-50 p-6 md:p-10 font-sans">
           <div className="max-w-[1400px] mx-auto">
@@ -629,7 +681,6 @@
               </button>
             </div>
 
-            {/* 以下 UI 渲染皆未更動 */}
             {activeTab === 'parser' && (
               <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                 <div 
@@ -980,10 +1031,29 @@
     };
 
     // ==========================================
-    // 渲染至 DOM
+    // 渲染與防呆入口點
     // ==========================================
+    const MainApp = () => {
+      const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+      
+      const handleSaveKey = (key) => {
+        localStorage.setItem('gemini_api_key', key);
+        setApiKey(key);
+      };
+
+      if (!apiKey) {
+        return <ApiKeySetup onSave={handleSaveKey} />;
+      }
+
+      return (
+        <ErrorBoundary>
+          <Dashboard apiKey={apiKey} />
+        </ErrorBoundary>
+      );
+    };
+
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(<MainApp />);
   </script>
 </body>
 </html>
